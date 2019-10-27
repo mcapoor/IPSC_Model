@@ -20,8 +20,6 @@ def error(Y, out):
 
 def update(X, Y, w):
     net = np.dot(X, w)
-    '''print(net)
-    print()'''
     out = nonlin(net)
     dE = -(Y - out)
     dOut = net * (1 - net)
