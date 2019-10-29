@@ -7,35 +7,49 @@ def nonlin(X, deriv = False):
         return 1 / (1 + np.exp(-X))
 
 def init_data():
-    X = np.array([ [1], 
-                   [0]])
+    X = np.array([ [1, 1], 
+                   [0, 1],
+                   [1, 0],
+                   [0, 0] ])
 
-    Y = np.array([ [1], 
-                   [0]])
+    Y = np.array([ [0], 
+                   [1],
+                   [1],
+                   [0] ])
+    
+    w = 2 * (np.random.rand(np.shape(X)[0], np.shape(X)[1])) - 1
 
-    return X, Y
+    return X, Y, w
 
-def error(Y, out):
-    return (1/2) * ((Y - out) ** 2)
-
-def update(X, Y, w):
-    net = np.dot(X, w)
+def update(X, w, Y = init_data()[1]):
+    net = X * w
     out = nonlin(net)
+
     dE = -(Y - out)
-    dOut = net * (1 - net)
-    delta_w = np.dot(np.dot(dE, dOut), X)
-    return w - delta_w.T
+    dOut = nonlin(net, True)
 
-X, Y = init_data()
+    delta_w = dE * dOut * X
 
-w = []
+    return delta_w
+
+def process(input, weights):
+    net = input * weights
+    out = nonlin(net)
+    delta = input * update(input, weights)
+    updated_weights = weights + delta
+
+    return out, updated_weights
+
+X, Y, w = init_data()
 for epoch in range(10000):
-    if (epoch > 0):
-        w.append(update(X, Y, w[len(w) - 1]))
-        del(w[0])
-    else:
-        w_initial = 2 * (np.random.rand(np.shape(X)[1], np.shape(X)[0])) - 1
-        w.append(w_initial)
+    initial_input = X 
+    initial_weights = w
 
-result = nonlin(np.dot(X, w[len(w) - 1]))
-print(result)
+    l1_output, l1_weights = process(initial_input, initial_weights)
+    h1_output, h1_weights = process(l1_output, l1_weights)
+    h2_output, h2_weights = process(h1_output, h1_weights)
+    output = nonlin(h2_output * h2_weights)
+
+final = np.resize(output, (4, 1))
+print("Predicted:\n", final)
+print("\nActual:\n", Y)
