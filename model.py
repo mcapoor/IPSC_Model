@@ -1,4 +1,8 @@
 import numpy as np
+import csv
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import OneHotEncoder
+import data_processing
 
 def nonlin(X, deriv = False):
     if (deriv == True):
@@ -7,51 +11,86 @@ def nonlin(X, deriv = False):
         return 1 / (1 + np.exp(-X))
 
 def init_data():
-    X = np.array([ [1, 1],
-                   [0, 1],
-                   [1, 0],
-                   [0, 0] ])
-
-    Y = np.array([ [0],
-                   [1],
-                   [1],
-                   [0] ])
+    with open('data/data.csv', 'r') as file:
+        reader = csv.reader(file, delimiter=',')
+        headers = next(reader)
+        data = list(reader)
+        data = np.array(data)
+        
+        abbreviation = data[:0]
+        cell = data[:1]
+        signal = data[:2]
+        p_value = data[:3]
+        
+        label_encoder = LabelEncoder()
+        onehot_encoder = OneHotEncoder(sparse=False)
     
-    w = 2 * (np.random.rand(np.shape(X)[0], np.shape(X)[1])) - 1
+        abbreviation_ie = label_encoder.fit_transform(abbreviation)
+        abbreviation_ie = abbreviation_ie.reshape(len(abbreviation_ie), 1)
+        abbreviation_encoded = onehot_encoder.fit_transform(abbreviation_ie)
+        
+        cell_ie = label_encoder.fit_transform(cell)
+        cell_ie = abbreviation_ie.reshape(len(cell_ie), 1)
+        cell_encoded = onehot_encoder.fit_transform(cell_ie)
 
-    return X, Y, w
+        input = abbreviation_encoded + cell_encoded + p_value
+        output = signal
 
-def update(X, w, Y = init_data()[1]):
-    net = X * w
+    return input, output
+
+def error(out, Y):
+    sum = 0
+    error = (1/2) * ((Y - out) ** 2)
+    
+    rows = np.shape(error)[0]
+    columns = np.shape(error)[1]
+    for row in range(rows):
+        for column in range(columns):
+            sum += out[row][column]
+
+    mean = sum / (rows * columns)
+    return round(mean * 100, 2)
+
+def layer_out(layer_input, layer_weights):
+    net = np.dot(layer_input, layer_weights)
     out = nonlin(net)
+    return net, out
 
-    dE = -(Y - out)
-    dOut = nonlin(net, True)
+def update_weights(layer_input, layer_weights, Y):
+    net, out = layer_out(layer_input, layer_weights)
+    print(np.shape(Y), np.shape(net), np.shape(out), np.shape(layer_input))
+    weight_delta = -(Y - out) * (net * (1 - net)) * layer_input
+    return weight_delta
 
-    delta_w = dE * dOut * X
-
-    return delta_w
-
-def process(input, weights, delta=0):
-    net = input * weights
-    out = nonlin(net)
-    delta += input * update(input, weights)
-    updated_weights = weights + delta
-
-    return out, updated_weights, delta
-
-X, Y, w = init_data()
+X, Y = init_data()
 for epoch in range(100000):
-    initial_input = X 
-    initial_weights = w
+    inputs = np.shape(X)[1]
+    first_hidden_neurons = 2 * inputs
+    second_hidden_neurons = 2 * first_hidden_neurons
+    third_hidden_neurons = first_hidden_neurons
+    output_neurons = np.shape(Y)[0]
 
-    l1_output, l1_weights, l1_delta = process(initial_input, initial_weights)
-    h1_output, h1_weights, h1_delta = process(l1_output, l1_weights, l1_delta)
-    h2_output, h2_weights, h2_delta = process(h1_output, h1_weights, h1_delta)
-    h3_output, h3_weights, h3_delta = process(h2_output, h2_weights, h2_delta)
-    h4_output, h4_weights, h4_delta = process(h3_output, h3_weights, h3_delta)
-    h5_output, h5_weights, h5_delta = process(h4_output, h4_weights, h4_delta)
-    output = nonlin(h5_output * h5_weights)
+    input_weights = 2 * (np.random.rand(inputs, first_hidden_neurons)) - 1
+    first_hidden_weights = 2 * (np.random.rand(first_hidden_neurons, second_hidden_neurons)) - 1
+    second_hidden_weights = 2 * (np.random.rand(second_hidden_neurons, third_hidden_neurons)) - 1
+    third_hidden_weights = 2 * (np.random.rand(third_hidden_neurons, output_neurons)) - 1
+    output_weights = 2 * (np.random.rand(output_neurons, np.shape(Y)[1])) - 1
 
+    l1 = layer_out(X, input_weights)
+    input_weights += update_weights(X, input_weights)
+    
+    h1 = layer_out(l1, first_hidden_weights)
+    first_hidden_weights += update_weights(l1, first_hidden_weights)
+
+    h2 = layer_out(h1, second_hidden_weights)
+    second_hidden_weights += update_weights(h1, second_hidden_weights)
+
+    h3 = layer_out(h2, third_hidden_weights)
+    third_hidden_weights += update_weights(h2, third_hidden_weights)
+
+    output = layer_out(h3, output_weights)
+    output_weights += update_weights(h3, output_weights)
+    
 print("Predicted:\n", output)
 print("\nActual:\n", Y)
+print("\n Mean Error:\n", error(output, Y),"%")
