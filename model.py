@@ -4,10 +4,12 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from bs4 import BeautifulSoup
 import requests
+import time
 
 class Scraper:
-    def create_genes(self, amazonia_list): #'http://amazonia.transcriptome.eu/list.php?section=display&id=388' or 199
-        results = requests.get(amazonia_list) 
+    def create_genes(self, list_id): #'http://amazonia.transcriptome.eu/list.php?section=display&id=388' or 199
+        link = 'http://amazonia.transcriptome.eu/list.php?section=display&id={list_id}'
+        results = requests.get(link) 
         list_page = results.text
 
         soup = BeautifulSoup(list_page, 'html.parser')
@@ -15,7 +17,7 @@ class Scraper:
         table = soup.find('div', class_='field')
         rows = table.find_all('tr')
 
-        with open('data/genes.csv', 'w') as file:
+        with open('data/genes_{list_id}.csv', 'w') as file:
             fieldnames = []
             for row in rows:
                 header_sections = row.find_all('th')
@@ -37,12 +39,12 @@ class Scraper:
         gene = []
         rows = []
 
-    def genes_length(self):
-        with open('data/genes.csv', 'r') as file:
+    def genes_length(self, list_id):
+        with open('data/genes_{list_id}.csv', 'r') as file:
             return len(file.readlines())
             
-    def id(self, line_num):
-        with open('data/genes.csv', 'r') as file:
+    def label_id(self, line_num, list_id):
+        with open('data/genes_{list_id}.csv', 'r') as file:
             reader = csv.DictReader(file, delimiter=',')
             for line in reader:
                 if (reader.line_num == line_num):
@@ -52,21 +54,21 @@ class Scraper:
         link = "http://amazonia.transcriptome.eu/expression.php?section=displayData&probeId=" + str(id) + "&series=HBI"
         return link
 
-    def abbreviation(self, id):
-        with open('data/genes.csv', 'r') as file:
+    def abbreviation(self, id, list_id):
+        with open('data/genes_{list_id}.csv', 'r') as file:
             reader = csv.DictReader(file, delimiter=',')
             for line in reader:
                 if (line["List Item"] == id): 
                     return line["Abbreviation"]
 
-    def create_data(self):
-        with open('data/data.csv', 'w') as output:
+    def create_data(self, list_id):
+        with open('data/data_{list_id}.csv', 'w') as output:
             fieldnames = ["Gene", "Samples", "Signal", "p-Value"]
             writer = csv.writer(output, delimiter=',', lineterminator='\n')
             writer.writerow(fieldnames)
 
-            for line in range(Scraper.genes_length(self)):        
-                results = requests.get(Scraper.link(self, Scraper.id(self, line)))
+            for line in range(Scraper.genes_length(self, list_id)):        
+                results = requests.get(Scraper.link(self, Scraper.label_id(self, line, list_id)))
                 page = results.text
                 soup = BeautifulSoup(page, 'html.parser')
 
@@ -76,11 +78,9 @@ class Scraper:
                     entries = row.find_all('td')
                     for i in range(3):
                         gene.append(entries[i].get_text())
-                    entry = []
-                    entry.append(Scraper.abbreviation(self, Scraper.id(self, line)))
-                    entry += gene
-
-                    writer.writerow(entry)
+                    
+                    name = Scraper.abbreviation(self, Scraper.label_id(self, line, list_id), list_id)
+                writer.writerow(name + gene)
 
         fieldnames = []
         table = []
@@ -88,9 +88,9 @@ class Scraper:
         entry = []
 
 
-    def main(self):
-        Scraper.create_genes(self, 'http://amazonia.transcriptome.eu/list.php?section=display&id=388')
-        Scraper.create_data(self)
+    def main(self, list_id):
+        Scraper.create_genes(self, list_id)
+        Scraper.create_data(self, list_id)
 
 class Model:
     def nonlin(self, X, deriv = False):
@@ -99,11 +99,48 @@ class Model:
         else:
             return 1 / (1 + np.exp(-X))
 
-    def init_data(self):
-        scraper = Scraper()
-        scraper.main()
+    def preload_weights(self):
+        response = input("Preload weights?")
+        if ('yes' in response.lower()):
+            with open("data/weights.csv", "r") as file:
+                reader = csv.reader(file)
+                text = reader.read()
+                headers = next(reader)
+                data = list(next(reader))
+                data = np.array(data, dtype=float)
 
-        with open('data/data.csv', 'r') as file:
+                input_weights = data[0]
+                hidden_weights = data[1]
+                output_weights = data[2]
+
+                return input_weights, hidden_weights, output_weights
+        
+    def init_weights(self, X, Y):
+        response = input("Preload weights?")
+        if ('yes' in response.lower()):
+            input_weights, hidden_weights, output_weights = Model.preload_weights(self)
+        else:
+            inputs = np.shape(X)[1] 
+            hidden_neurons = 2 * inputs
+            output_neurons = np.shape(Y)[0]
+
+            input_weights = 2 * np.random.rand(inputs, hidden_neurons) - 1
+            hidden_weights = 2 * np.random.rand(hidden_neurons, output_neurons) - 1
+            output_weights = 2 * np.random.rand(output_neurons, 0) - 1
+
+        return input_weights, hidden_weights, output_weights
+
+    def init_data(self):            
+        response = input("Generate new database files?")
+        if ('yes' in response.lower()):
+            print("Creating Data file")
+            scraper = Scraper()
+            amazonia_list_id = '388'
+            scraper.main(amazonia_list_id)
+
+        print("Initialising Data...\n")
+        time.clock()
+        with open('data/data_{amazonia_list_id}.csv', 'r') as file:
             reader = csv.reader(file, delimiter=',')
             headers = next(reader)
             data = list(reader)
@@ -127,8 +164,8 @@ class Model:
             p_value = np.array(p_value)
             signal = np.array(signal)
 
-            input = np.column_stack((abbreviation_encoded, cell_encoded, p_value))
-            output = signal
+            value_input = np.column_stack((abbreviation_encoded, cell_encoded, p_value))
+            value_output = signal
             
             data = []
             abbreviation = []
@@ -137,7 +174,8 @@ class Model:
             cell_encoded = []
             p_value = []
 
-        return input, output
+        print("Data Initialised in {time.clock()} seconds\n")
+        return value_input, value_output
 
     def error(self, out, Y):
         sum = 0
@@ -166,31 +204,33 @@ class Model:
 
         return weight_delta
 
-    def main(self):
+    def write_weights(self, iw, hw, ow):
+        with open('data/weights_{amazonia_list_id}.csv', 'w') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Input Weights", "Hidden Weights", "Output Weights"])
+            writer.writerow(iw, hw, ow)
+
+    def main(self):        
         X, Y = Model.init_data(self)
+        input_weights, hidden_weights, output_weights = Model.init_weights(self, X, Y)
+
         for epoch in range(100000):
-            print("Training Epoch:", epoch, "-", (epoch/10000) * 100, "%")
-
-            inputs = np.shape(X)[1]
-            hidden_neurons = 2 * inputs
-            output_neurons = np.shape(Y)[0]
-
-            input_weights = np.multiply(2, np.random.rand(inputs, hidden_neurons)) - 1
-            hidden_weights = 2 * (np.random.rand(hidden_neurons, output_neurons)) - 1
-            output_weights = 2 * (np.random.rand(output_neurons, 0)) - 1
+            print("Training Epoch: {epoch}, - {(epoch / 1000) * 100}%")
+            time.clock()
 
             l1 = Model.layer_out(self, X, input_weights)
             input_weights += Model.update_weights(self, X, input_weights)
             
-            h1 = Model.layer_out(self, l1, hidden_weights)
+            h1 = Model.layer_out(self, l1[1], hidden_weights)
             first_hidden_weights += Model.update_weights(self, l1, hidden_weights)
 
-            output = Model.layer_out(self, h1, output_weights)
+            output = Model.layer_out(self, h1[1], output_weights)
             output_weights += Model.update_weights(self, h1, output_weights)
-            
-        print("Predicted:\n", output)
-        print("\nActual:\n", Y)
-        print("\n Mean Error:\n", Model.error(self, output, Y),"%")
+           
+            print("Epoch {epoch}/1000 completed in {timer.clock()} seconds\n")
+        
+        print("Mean Error:", Model.error(self, output, Y),"%")
+        Model.write_weights(self, input_weights, hidden_weights, output_weights)
 
 model = Model()
 model.main()
